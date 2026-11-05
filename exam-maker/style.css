@@ -141,3 +141,94 @@ pre { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line
 .summary .warn { color: var(--err); font-weight: 600; }
 .primary.big { font-size: 1.05rem; padding: 12px 22px; }
 .chip:disabled { opacity: .45; }
+
+/* v3: 편집기·검사·카드·이력 */
+code { font-size: .85em; background: var(--soft); padding: 0 4px; border-radius: 4px; }
+.seg.small button { padding: 8px; font-size: .9rem; }
+.seg button:disabled { opacity: .4; cursor: not-allowed; }
+.filebtn { display: inline-flex; align-items: center; cursor: pointer; font-size: .95rem; }
+.filebtn input { display: none; }
+.row.end { justify-content: flex-end; }
+.danger { color: var(--err) !important; border-color: var(--err) !important; }
+.files .fname { flex: 1 1 200px; }
+.files li { flex-wrap: wrap; align-items: center; }
+.files input.pages { flex: 1 1 180px; padding: 5px 8px; font-size: .85rem; }
+.files input.pages.invalid { outline: 2px solid var(--err); }
+body.busy .card footer .ai, body.busy .chip.ai { opacity: .45; }
+
+.checks { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.ck { font-size: .82rem; border-radius: 999px; padding: 3px 10px; border: 1px solid var(--line); }
+.ck.ok { color: var(--ok); border-color: var(--ok); }
+.ck.warn { color: var(--note-ink); border-color: var(--note-line); background: var(--note-bg); }
+.ck.bad { color: var(--err); border-color: var(--err); font-weight: 600; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.followup-row textarea, #editor .row textarea { flex: 1; min-width: 220px; }
+.review { background: var(--soft); border-radius: 10px; padding: 10px 14px; margin: 10px 0; font-size: .92rem; }
+
+.cards { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 24px; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--card); }
+.card.locked { border-color: var(--navy); box-shadow: inset 4px 0 0 var(--navy); }
+.card.dragging { opacity: .4; }
+.card.dropto { outline: 2px dashed var(--accent); }
+.card header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+.card header b { font-size: 1.05rem; color: var(--navy); }
+.drag { cursor: grab; color: var(--muted); user-select: none; }
+.badge { font-size: .75rem; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; color: var(--muted); }
+.badge.d상 { color: #b42318; border-color: #f3b4ae; }
+.badge.d중 { color: #b54708; border-color: #f7d08a; }
+.badge.d하 { color: var(--ok); border-color: #9fd8b8; }
+.badge.lock { color: var(--navy); border-color: var(--navy); }
+.badge.issue { color: var(--err); border-color: var(--err); font-weight: 700; }
+.meta { font-size: .8rem; color: var(--muted); }
+.card .stem { margin: 6px 0; }
+.card .passage, .preview .passage { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 6px 10px; margin: 6px 0; font-size: .9rem; overflow-x: auto; }
+.card .passage table, .preview .passage table { border-collapse: collapse; }
+.card .passage td, .card .passage th, .preview .passage td, .preview .passage th { border: 1px solid var(--line); padding: 2px 6px; }
+.ch { list-style: none; padding-left: 4px; margin: 4px 0; }
+.ch li { margin: 2px 0; }
+.ch li.ans { font-weight: 700; color: var(--ok); }
+.card .cond { font-size: .88rem; }
+.card details { font-size: .88rem; margin-top: 6px; }
+.issue-box { border-left: 3px solid var(--note-line); background: var(--note-bg); padding: 6px 10px; margin-top: 6px; font-size: .86rem; border-radius: 4px; }
+.issue-box.err { border-left-color: var(--err); }
+.card footer { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.card footer button { font-size: .8rem; padding: 4px 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; }
+.card footer button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* 결과물 미리보기 */
+.preview { font-size: .92rem; }
+.preview h1 { font-size: 1.25rem; text-align: center; }
+.preview h2 { font-size: 1.05rem; margin: 14px 0 6px; border: 0; padding: 0; }
+.preview .who { width: 100%; border-collapse: collapse; margin: 8px 0; }
+.preview .who td { border: 1px solid var(--line); padding: 4px; text-align: center; }
+.preview .notices { padding-left: 18px; font-size: .85rem; color: var(--muted); }
+.preview .cols { column-count: 2; column-gap: 28px; column-rule: 1px solid var(--line); }
+.preview .q { break-inside: avoid; margin-bottom: 14px; }
+.preview .ansbox { border: 1px solid var(--line); margin-top: 4px; }
+.preview .essay-h { border-top: 2px solid var(--ink); padding-top: 4px; }
+.preview .variant { border: 1.5px solid var(--ink); padding: 0 6px; font-size: .9rem; }
+.grid-t { border-collapse: collapse; width: 100%; margin: 6px 0; display: block; overflow-x: auto; }
+.grid-t th, .grid-t td { border: 1px solid var(--line); padding: 4px 6px; text-align: center; vertical-align: top; font-size: .85rem; }
+.grid-t th { background: var(--soft); }
+.grid-t td.l { text-align: left; }
+.grid-t .sum td { font-weight: 700; }
+.grid-t p { margin: 0; }
+.preview .model { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin: 6px 0; }
+
+/* 이력·은행 */
+.list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.lrow { display: flex; justify-content: space-between; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: .9rem; }
+.lrow .acts { display: flex; gap: 6px; flex-wrap: wrap; flex: none; }
+.lrow .acts button { padding: 6px 10px; font-size: .85rem; }
+
+dialog { border: 0; border-radius: 12px; padding: 0; width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); background: var(--card); color: var(--ink); }
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+dialog form { padding: 18px; }
+dialog h3 { margin-bottom: 10px; color: var(--navy); }
+
+@media (max-width: 600px) {
+  .preview .cols { column-count: 1; }
+  .lrow { flex-direction: column; align-items: stretch; }
+  .steps { flex-wrap: wrap; }
+  .step { flex: 1 1 45%; }
+}
