@@ -1,0 +1,76 @@
+{
+  "title": "tribute",
+  "resolution": [1920, 1080],
+  "fps": 30,
+  "look": "eq=saturation=0.75:contrast=1.05,vignette=PI/5",
+  "subtitles": true,
+  "subtitle_font": "Noto Sans CJK KR",
+  "bgm": {
+    "file": "audio/bgm/main.mp3",
+    "volume": 0.25,
+    "duck": true,
+    "fade_in": 2,
+    "fade_out": 4
+  },
+  "shots": [
+    {
+      "id": "s01",
+      "duration": 6,
+      "visual": { "type": "image", "file": "images/s01.png", "motion": "zoom_in" },
+      "image_prompt": "1970s Seoul police station at night, rain on the window, warm desk lamp, an empty wooden desk with a fedora hat and a worn notebook, cinematic 35mm film still, muted colors, 16:9",
+      "video_prompt": "",
+      "narration": {
+        "text": "비가 내리던 그 밤에도, 그의 책상엔 불이 켜져 있었습니다.",
+        "file": "audio/narration/s01.wav",
+        "offset": 0.8
+      },
+      "sfx": [
+        { "file": "audio/sfx/rain.wav", "at": 0, "volume": 0.5 },
+        { "file": "audio/sfx/clock_tick.wav", "at": 1.0, "volume": 0.4 }
+      ]
+    },
+    {
+      "id": "s02",
+      "duration": 6,
+      "visual": { "type": "clip", "file": "clips/s02.mp4", "keep_audio": false },
+      "image_prompt": "Silhouette of a detective in a trench coat walking down a dim corridor, seen from behind, 1970s, film grain, 16:9",
+      "video_prompt": "Slow dolly forward following the silhouetted detective down the corridor, flickering fluorescent light, no face visible",
+      "narration": {
+        "text": "사건이 있는 곳이면, 언제나 그 발걸음이 먼저 닿았습니다.",
+        "file": "audio/narration/s02.wav",
+        "offset": 0.5
+      },
+      "sfx": [
+        { "file": "audio/sfx/footsteps.wav", "at": 0.3, "volume": 0.8 }
+      ]
+    },
+    {
+      "id": "s03",
+      "duration": 5,
+      "visual": { "type": "image", "file": "images/s03.png", "motion": "pan_right" },
+      "image_prompt": "Close-up of an old typewriter typing a case report, cigarette smoke, desk lamp, 1970s Korea, shallow depth of field, 16:9",
+      "narration": {
+        "text": "범인보다 사람을 먼저 보던 수사관.",
+        "file": "audio/narration/s03.wav"
+      },
+      "sfx": [
+        { "file": "audio/sfx/typewriter.wav", "at": 0.2, "volume": 0.6 }
+      ]
+    },
+    {
+      "id": "s04",
+      "duration": 7,
+      "visual": { "type": "image", "file": "images/s04.png", "motion": "zoom_out" },
+      "image_prompt": "The fedora hat resting on the empty desk, morning light through the window, rain stopped, peaceful, cinematic, 16:9",
+      "narration": {
+        "text": "이제 편히 쉬세요. 고맙습니다.",
+        "file": "audio/narration/s04.wav",
+        "offset": 1.5
+      },
+      "sfx": [
+        { "file": "audio/sfx/impact.wav", "at": 0, "volume": 0.5 }
+      ],
+      "fade": 1.2
+    }
+  ]
+}

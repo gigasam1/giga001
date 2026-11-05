@@ -1,0 +1,9 @@
+# 생성한 미디어는 git에 올리지 않음
+images/*
+clips/*
+audio/**/*.wav
+audio/**/*.mp3
+audio/**/*.m4a
+out/*
+!**/.gitkeep
+__pycache__/
