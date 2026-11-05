@@ -1,9 +1,15 @@
 import {
-  PROMPT_COMMON, PROMPT_KOREAN, buildPrompt3, buildOrderForm, START_MSG, QUICK_REQUESTS,
+  PROMPT_COMMON, SUBJECT_GUIDES, DIFF_PRESETS, buildPrompt3, buildOrderForm, START_MSG, QUICK_REQUESTS,
 } from './prompts.js';
 
 const SDK_URL = 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.1.0/+esm';
-const KIND_LABEL = { textbook: '교과서 단원', past: '기존 평가지(문제+정답)', form: '출제원안 양식' };
+const KIND_LABEL = {
+  lesson: '이번 학습 자료',
+  past: '기존 틀 ① 지난 문제지(문제+정답)',
+  table: '기존 틀 ② 이원목적분류표 양식',
+  essay: '기존 틀 ③ 서술형 답안·채점 기준 양식',
+};
+const TEMPLATE_KINDS = ['past', 'table', 'essay'];
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_REQUEST_BYTES = 30 * 1024 * 1024; // API 한도 32MB, 여유분 확보
 const SECTION_RE = /^# \[(.+?)\]\s*$/gm;
@@ -18,8 +24,34 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch { /* 무시 */ } },
 };
 
+// 기존 틀 파일은 커서 IndexedDB에 저장
+const idb = {
+  db: null,
+  open() {
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('examMaker', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('templates');
+      r.onsuccess = () => { this.db = r.result; res(this.db); };
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async run(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('templates', mode);
+      const req = fn(t.objectStore('templates'));
+      t.oncomplete = () => res(req && req.result);
+      t.onerror = () => rej(t.error);
+    });
+  },
+  async put(k, v) { try { await this.run('readwrite', (s) => s.put(v, k)); return true; } catch { return false; } },
+  async get(k) { try { return await this.run('readonly', (s) => s.get(k)); } catch { return undefined; } },
+  async clear() { try { await this.run('readwrite', (s) => s.clear()); } catch { /* 무시 */ } },
+};
+
 // ---------- 상태 ----------
-const files = { textbook: [], past: [], form: [] };
+const files = { lesson: [], past: [], table: [], essay: [] };
 let messages = [];          // API 대화 기록 (추가만 함)
 let phase = 'idle';         // idle → analyzed → generated
 let running = null;         // 진행 중 스트림
@@ -31,14 +63,15 @@ let Anthropic = null;
 function go(n) {
   $$('.panel').forEach((p) => { p.hidden = p.id !== `panel-${n}`; });
   $$('.step').forEach((b) => b.classList.toggle('active', b.dataset.step === String(n)));
+  if (String(n) === '3') renderSummary();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 $$('.step').forEach((b) => b.addEventListener('click', () => go(b.dataset.step)));
 $$('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
 
-// ---------- 주문서 ----------
-const FIELDS = ['school', 'grade', 'subject', 'subjectOther', 'examName', 'range', 'mcq', 'essay', 'total',
-  'choices', 'scoreRule', 'diffHigh', 'diffMid', 'diffLow', 'extra', 'subjectGuide', 'model'];
+// ---------- 설정 ----------
+const FIELDS = ['school', 'grade', 'subject', 'subjectOther', 'examName', 'range', 'lesson', 'mcq', 'essay', 'total',
+  'choices', 'scoreRule', 'diffPreset', 'diffHigh', 'diffMid', 'diffLow', 'extra', 'model'];
 
 function settings() {
   const s = {};
@@ -46,38 +79,84 @@ function settings() {
   if (s.subject === '기타') s.subject = s.subjectOther || '기타';
   return s;
 }
-function loadSettings() {
-  let saved = {};
-  try { saved = JSON.parse(store.get('examMaker.settings') || '{}'); } catch { saved = {}; }
-  FIELDS.forEach((f) => { if (saved[f] != null) $(`#${f}`).value = saved[f]; });
-  const key = store.get('examMaker.apiKey');
-  if (key) { $('#apiKey').value = key; $('#rememberKey').checked = true; }
-}
 function saveSettings() {
   const raw = {};
   FIELDS.forEach((f) => { raw[f] = $(`#${f}`).value; });
   store.set('examMaker.settings', JSON.stringify(raw));
 }
+function loadSettings() {
+  let saved = {};
+  try { saved = JSON.parse(store.get('examMaker.settings') || '{}'); } catch { saved = {}; }
+  FIELDS.forEach((f) => { if (saved[f] != null && $(`#${f}`)) $(`#${f}`).value = saved[f]; });
+  if (!['사회', '역사', '도덕', '기타'].includes($('#subject').value)) $('#subject').value = '사회';
+  const key = store.get('examMaker.apiKey');
+  if (key) { $('#apiKey').value = key; $('#rememberKey').checked = true; }
+}
+FIELDS.forEach((f) => $(`#${f}`).addEventListener('input', () => { saveSettings(); refreshPromptPreview(); }));
+
+// 버튼식 선택(과목·학년·난이도)
+function syncSeg() {
+  $$('.seg').forEach((seg) => {
+    const v = $(`#${seg.dataset.target}`).value;
+    $$('button', seg).forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+  });
+}
+$$('.seg').forEach((seg) => {
+  $$('button', seg).forEach((b) => b.addEventListener('click', () => {
+    $(`#${seg.dataset.target}`).value = b.dataset.v;
+    if (seg.dataset.target === 'subject') onSubjectChange();
+    if (seg.dataset.target === 'diffPreset') applyPreset();
+    syncSeg();
+    saveSettings();
+  }));
+});
+
+function applyPreset() {
+  const p = DIFF_PRESETS[$('#diffPreset').value];
+  if (p) [$('#diffHigh').value, $('#diffMid').value, $('#diffLow').value] = p;
+  updateDiffCount();
+}
+['diffHigh', 'diffMid', 'diffLow'].forEach((id) => $(`#${id}`).addEventListener('input', () => {
+  const cur = [$('#diffHigh').value, $('#diffMid').value, $('#diffLow').value].map(Number).join();
+  const match = Object.entries(DIFF_PRESETS).find(([, v]) => v.join() === cur);
+  $('#diffPreset').value = match ? match[0] : '직접 설정';
+  syncSeg(); saveSettings(); updateDiffCount();
+}));
+['mcq', 'essay'].forEach((id) => $(`#${id}`).addEventListener('input', updateDiffCount));
+
+// 비율을 문항 수로 환산 (반올림 차이는 '중'에서 조정)
+function diffCounts() {
+  const n = (Number($('#mcq').value) || 0) + (Number($('#essay').value) || 0);
+  const r = [$('#diffHigh').value, $('#diffMid').value, $('#diffLow').value].map((x) => Number(x) || 0);
+  const sum = r[0] + r[1] + r[2];
+  if (!sum || !n) return null;
+  const hi = Math.round((n * r[0]) / sum);
+  const lo = Math.round((n * r[2]) / sum);
+  return [hi, Math.max(0, n - hi - lo), lo];
+}
+function updateDiffCount() {
+  const c = diffCounts();
+  $('#diffCount').textContent = c ? `→ 상 ${c[0]} · 중 ${c[1]} · 하 ${c[2]}문항` : '';
+}
+
+// 교과 응용 지침: 과목별 기본값, 고친 내용은 과목별로 저장
+function guideKey() { return `examMaker.guide.${$('#subject').value}`; }
 function onSubjectChange() {
   const sub = $('#subject').value;
   $('#subjectOtherWrap').hidden = sub !== '기타';
-  const guide = $('#subjectGuide');
-  if (sub === '국어' && !guide.value.trim()) guide.value = PROMPT_KOREAN;
-  if (sub !== '국어' && guide.value.trim() === PROMPT_KOREAN.trim()) guide.value = '';
+  $('#genGuide').hidden = sub !== '기타';
+  const custom = store.get(guideKey());
+  $('#subjectGuide').value = custom != null ? custom : (SUBJECT_GUIDES[sub] || '');
   refreshPromptPreview();
 }
-FIELDS.forEach((f) => $(`#${f}`).addEventListener('input', () => { saveSettings(); refreshPromptPreview(); }));
-$('#subject').addEventListener('change', () => { onSubjectChange(); saveSettings(); });
+$('#subjectGuide').addEventListener('input', () => { store.set(guideKey(), $('#subjectGuide').value); refreshPromptPreview(); });
+$('#resetGuide').addEventListener('click', () => { store.del(guideKey()); onSubjectChange(); });
 
 function systemPrompt() {
   const g = $('#subjectGuide').value.trim();
   return g ? `${PROMPT_COMMON}\n\n${g}` : PROMPT_COMMON;
 }
 function refreshPromptPreview() { $('#promptText').textContent = systemPrompt(); }
-$('#viewPrompt').addEventListener('click', () => {
-  refreshPromptPreview();
-  $('#promptPreview').open = !$('#promptPreview').open;
-});
 
 // ---------- 파일 ----------
 function readAs(file, how) {
@@ -88,7 +167,7 @@ function readAs(file, how) {
     if (how === 'text') r.readAsText(file); else r.readAsDataURL(file);
   });
 }
-async function addFile(kind, file) {
+async function toEntry(file) {
   const name = file.name;
   const lower = name.toLowerCase();
   const entry = { name, size: file.size };
@@ -98,19 +177,25 @@ async function addFile(kind, file) {
     entry.type = 'pdf';
     entry.data = (await readAs(file, 'url')).split(',')[1];
   } else if (file.type.startsWith('image/')) {
-    if (!IMAGE_TYPES.includes(file.type)) {
-      entry.type = 'bad';
-    } else {
+    if (IMAGE_TYPES.includes(file.type)) {
       entry.type = 'image';
       entry.media = file.type;
       entry.data = (await readAs(file, 'url')).split(',')[1];
+    } else {
+      entry.type = 'bad';
     }
   } else {
     entry.type = 'text';
     entry.text = await readAs(file, 'text');
   }
-  files[kind].push(entry);
+  return entry;
+}
+async function addFiles(kind, list) {
+  for (const f of list) {
+    try { files[kind].push(await toEntry(f)); } catch (e) { alert(`${f.name} 읽기 실패: ${e.message}`); }
+  }
   renderFiles(kind);
+  if (TEMPLATE_KINDS.includes(kind)) saveTemplates();
 }
 function renderFiles(kind) {
   const ul = $(`.drop[data-kind="${kind}"] .files`);
@@ -124,7 +209,11 @@ function renderFiles(kind) {
     const x = document.createElement('button');
     x.textContent = '삭제';
     x.className = 'x';
-    x.addEventListener('click', () => { files[kind].splice(i, 1); renderFiles(kind); });
+    x.addEventListener('click', () => {
+      files[kind].splice(i, 1);
+      renderFiles(kind);
+      if (TEMPLATE_KINDS.includes(kind)) saveTemplates();
+    });
     li.appendChild(x);
     ul.appendChild(li);
   });
@@ -132,9 +221,12 @@ function renderFiles(kind) {
 }
 function fmtSize(b) { return b > 1048576 ? `${(b / 1048576).toFixed(1)}MB` : `${Math.ceil(b / 1024)}KB`; }
 function usable(f) { return f.type === 'pdf' || f.type === 'image' || f.type === 'text'; }
+function pasted(kind) { return $(`.drop[data-kind="${kind}"] textarea`).value.trim(); }
+function has(kind) { return files[kind].some(usable) || !!pasted(kind); }
 function totalBytes() {
   let n = 0;
   Object.values(files).flat().filter(usable).forEach((f) => { n += f.data ? f.data.length : f.text.length * 3; });
+  Object.keys(files).forEach((k) => { n += pasted(k).length * 3; });
   return n;
 }
 function updateSize() {
@@ -143,27 +235,51 @@ function updateSize() {
   el.textContent = n ? `전송 크기 약 ${fmtSize(n)} / 최대 30MB` : '';
   el.classList.toggle('err', n > MAX_REQUEST_BYTES);
 }
+
 $$('.drop').forEach((d) => {
   const kind = d.dataset.kind;
   const input = $('input[type=file]', d);
-  input.addEventListener('change', async () => {
-    for (const f of input.files) {
-      try { await addFile(kind, f); } catch (e) { alert(`${f.name} 읽기 실패: ${e.message}`); }
-    }
-    input.value = '';
-  });
+  input.addEventListener('change', async () => { await addFiles(kind, [...input.files]); input.value = ''; });
   d.addEventListener('dragover', (e) => { e.preventDefault(); d.classList.add('over'); });
   d.addEventListener('dragleave', () => d.classList.remove('over'));
   d.addEventListener('drop', async (e) => {
     e.preventDefault();
     d.classList.remove('over');
-    for (const f of e.dataTransfer.files) {
-      try { await addFile(kind, f); } catch (err) { alert(`${f.name} 읽기 실패: ${err.message}`); }
-    }
+    await addFiles(kind, [...e.dataTransfer.files]);
   });
-  $('textarea', d).addEventListener('input', updateSize);
+  $('textarea', d).addEventListener('input', () => {
+    updateSize();
+    if (TEMPLATE_KINDS.includes(kind)) saveTemplatesSoon();
+  });
 });
-function pasted(kind) { return $(`.drop[data-kind="${kind}"] textarea`).value.trim(); }
+
+// 기존 틀 저장·불러오기
+let saveTimer = 0;
+function saveTemplatesSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveTemplates, 600); }
+async function saveTemplates() {
+  const data = {};
+  TEMPLATE_KINDS.forEach((k) => { data[k] = { files: files[k], text: pasted(k) }; });
+  const ok = await idb.put('templates', data);
+  const any = TEMPLATE_KINDS.some(has);
+  $('#savedBadge').hidden = !(ok && any);
+}
+async function loadTemplates() {
+  const data = await idb.get('templates');
+  if (!data) return;
+  TEMPLATE_KINDS.forEach((k) => {
+    if (!data[k]) return;
+    files[k] = data[k].files || [];
+    $(`.drop[data-kind="${k}"] textarea`).value = data[k].text || '';
+    renderFiles(k);
+  });
+  $('#savedBadge').hidden = !TEMPLATE_KINDS.some(has);
+}
+$('#clearTemplates').addEventListener('click', async () => {
+  if (!confirm('저장된 기존 틀(지난 문제지·이원목적분류표·서술형 양식)을 모두 지울까요?')) return;
+  await idb.clear();
+  TEMPLATE_KINDS.forEach((k) => { files[k] = []; $(`.drop[data-kind="${k}"] textarea`).value = ''; renderFiles(k); });
+  $('#savedBadge').hidden = true;
+});
 
 function fileSummary() {
   return Object.keys(files).map((k) => {
@@ -173,7 +289,7 @@ function fileSummary() {
   }).join('\n');
 }
 
-function firstUserContent() {
+function firstUserContent(auto) {
   const blocks = [];
   for (const kind of Object.keys(files)) {
     for (const f of files[kind].filter(usable)) {
@@ -192,8 +308,31 @@ function firstUserContent() {
   }
   // 자료는 대화 내내 그대로이므로 캐시해 수정 요청 비용을 줄인다
   if (blocks.length) blocks[blocks.length - 1].cache_control = { type: 'ephemeral' };
-  blocks.push({ type: 'text', text: buildOrderForm(settings(), fileSummary()) });
+  blocks.push({ type: 'text', text: buildOrderForm(settings(), fileSummary(), auto) });
   return blocks;
+}
+
+function renderSummary() {
+  const s = settings();
+  const c = diffCounts();
+  const t = TEMPLATE_KINDS.filter(has).map((k) => KIND_LABEL[k].replace(/^기존 틀 . /, '')).join(', ');
+  $('#summary').innerHTML = '';
+  const items = [
+    ['과목·학년', `${s.subject} · ${s.grade}`],
+    ['난이도', `${s.diffPreset} (${s.diffHigh}:${s.diffMid}:${s.diffLow})${c ? ` → 상${c[0]}·중${c[1]}·하${c[2]}` : ''}`],
+    ['문항', `선택형 ${s.mcq} · 서술형 ${s.essay} · ${s.total}점`],
+    ['출제 범위', s.range || '⚠ 미입력'],
+    ['학습 자료', has('lesson') ? `${files.lesson.filter(usable).length}개 파일${pasted('lesson') ? ' + 붙여 넣은 본문' : ''}` : '⚠ 없음'],
+    ['기존 틀', t || '없음 (기본 양식으로 출력)'],
+  ];
+  items.forEach(([k, v]) => {
+    const d = document.createElement('div');
+    const b = document.createElement('b'); b.textContent = k;
+    const sp = document.createElement('span'); sp.textContent = v;
+    if (v.startsWith('⚠')) sp.className = 'warn';
+    d.append(b, sp);
+    $('#summary').appendChild(d);
+  });
 }
 
 // ---------- API ----------
@@ -252,10 +391,12 @@ function setBusy(on, msg = '') {
   $('#runStatus').textContent = msg;
   $('#runStatus').classList.remove('err');
   $('#stopBtn').disabled = !on;
+  $('#autoBtn').disabled = on || phase !== 'idle';
   $('#analyzeBtn').disabled = on || phase !== 'idle';
   $('#startBtn').disabled = on || phase !== 'analyzed';
   $('#sendBtn').disabled = on;
   $('#genGuide').disabled = on;
+  $$('#quick .chip').forEach((b) => { b.disabled = on; });
 }
 function showErr(msg) {
   $('#runStatus').textContent = msg;
@@ -270,7 +411,7 @@ async function send(userContent, label) {
   const bubble = addBubble('assistant');
   const body = $('.body', bubble);
   const think = $('.think', bubble);
-  setBusy(true, 'AI가 자료를 읽고 있습니다…');
+  setBusy(true, 'AI가 자료를 읽고 있습니다… (자료 양에 따라 몇 분 걸릴 수 있습니다)');
 
   let frame = 0;
   let snapshot = '';
@@ -280,7 +421,7 @@ async function send(userContent, label) {
     stream.on('thinking', (_d, snap) => {
       think.hidden = false;
       $('.tt', think).textContent = snap;
-      $('#runStatus').textContent = 'AI가 검토 중입니다…';
+      $('#runStatus').textContent = 'AI가 문항을 만들고 점검하는 중입니다…';
     });
     stream.on('text', (_d, snap) => {
       snapshot = snap;
@@ -311,40 +452,54 @@ async function send(userContent, label) {
   }
 }
 
+function checkReady() {
+  if (!has('lesson')) { showErr('학습 자료가 없으면 출제할 수 없습니다. 2단계에서 첨부해 주세요.'); return false; }
+  if (!$('#range').value.trim()) { showErr('출제 범위를 2단계에 입력해 주세요.'); return false; }
+  if (totalBytes() > MAX_REQUEST_BYTES) { showErr('첨부 자료가 30MB를 넘습니다. 필요한 쪽만 남겨 주세요.'); return false; }
+  if (!has('past') && !confirm('지난 문제지가 없으면 중복 판정을 할 수 없고 일반 양식으로 출력됩니다. 그래도 진행할까요?')) return false;
+  return true;
+}
+
+function onGenerated(text) {
+  phase = 'generated';
+  $('#followup').hidden = false;
+  updateResults(text);
+  setBusy(false, sections.length ? '완료 — 아래 최종 산출물을 확인하세요.' : '완료 — 산출물 형식이 나오지 않았다면 "전체 다시 출력"을 누르세요.');
+}
+
 $('#stopBtn').addEventListener('click', () => { if (running) running.abort(); });
 
+$('#autoBtn').addEventListener('click', async () => {
+  if (!checkReady()) return;
+  const s = settings();
+  const text = await send(firstUserContent(true), `⚡ 자동 출제 — ${s.subject} · ${s.grade} · 난이도 ${s.diffPreset}\n범위: ${s.range}\n${fileSummary()}`);
+  if (text != null) onGenerated(text);
+});
+
 $('#analyzeBtn').addEventListener('click', async () => {
-  const hasBook = files.textbook.some(usable) || pasted('textbook');
-  if (!hasBook) { showErr('교과서 단원 자료가 없으면 출제할 수 없습니다. 2단계에서 첨부해 주세요.'); return; }
-  if (totalBytes() > MAX_REQUEST_BYTES) { showErr('첨부 자료가 30MB를 넘습니다. 필요한 쪽만 남겨 주세요.'); return; }
-  if (!(files.past.some(usable) || pasted('past')) && !confirm('기존 평가지가 없으면 중복 판정을 할 수 없습니다. 그래도 진행할까요?')) return;
-  const text = await send(firstUserContent(), `자료 분석 요청\n${fileSummary()}`);
+  if (!checkReady()) return;
+  const text = await send(firstUserContent(false), `자료 분석 요청\n${fileSummary()}`);
   if (text != null) { phase = 'analyzed'; setBusy(false, '분석 보고를 확인하고 "출제 시작"을 누르세요.'); }
 });
 
 $('#startBtn').addEventListener('click', async () => {
   const text = await send([{ type: 'text', text: START_MSG }], '출제 시작');
-  if (text != null) {
-    phase = 'generated';
-    $('#followup').hidden = false;
-    updateResults(text);
-    setBusy(false, '완료 — 아래 최종 산출물을 확인하세요.');
-  }
+  if (text != null) onGenerated(text);
 });
 
+async function followUp(t) {
+  const text = await send([{ type: 'text', text: t }], t);
+  if (text != null) { updateResults(text); return true; }
+  return false;
+}
 $('#sendBtn').addEventListener('click', async () => {
   const t = $('#followText').value.trim();
-  if (!t) return;
-  const text = await send([{ type: 'text', text: t }], t);
-  if (text != null) {
-    $('#followText').value = '';
-    updateResults(text);
-  }
+  if (t && await followUp(t)) $('#followText').value = '';
 });
 
 $('#resetBtn').addEventListener('click', () => {
   if (running) return;
-  if (messages.length && !confirm('대화를 초기화할까요? 첨부 파일과 주문서는 그대로 남습니다.')) return;
+  if (messages.length && !confirm('대화를 초기화할까요? 첨부 파일과 설정은 그대로 남습니다.')) return;
   messages = []; phase = 'idle'; sections = [];
   $('#chat').innerHTML = '';
   $('#followup').hidden = true;
@@ -352,15 +507,20 @@ $('#resetBtn').addEventListener('click', () => {
   setBusy(false);
 });
 
-// 빠른 요청
+// 빠른 요청: 번호가 필요한 것은 입력칸에 채우고, 시험 전체 요청은 바로 보냄
 QUICK_REQUESTS.forEach((q) => {
   const b = document.createElement('button');
   b.className = 'chip';
-  b.textContent = q.replace('{n}번 ', '').replace('{n}번', '');
+  b.textContent = q.label;
   b.addEventListener('click', () => {
-    const n = $('#qNum').value || '1';
-    $('#followText').value = q.replaceAll('{n}', n);
-    $('#followText').focus();
+    if (q.text.includes('{n}')) {
+      const n = $('#qNum').value;
+      if (!n) { $('#qNum').focus(); showErr('문항 번호를 먼저 입력하세요.'); return; }
+      $('#followText').value = q.text.replaceAll('{n}', n);
+      $('#followText').focus();
+    } else {
+      followUp(q.text);
+    }
   });
   $('#quick').appendChild(b);
 });
@@ -456,10 +616,10 @@ async function copy(text, btn) {
 $('#copySystem').addEventListener('click', (e) => copy(systemPrompt(), e.currentTarget));
 $('#copyOrder').addEventListener('click', (e) => {
   const extra = Object.keys(files).map((k) => (pasted(k) ? `\n\n[${KIND_LABEL[k]} — 붙여 넣은 본문]\n${pasted(k)}` : '')).join('');
-  copy(buildOrderForm(settings(), fileSummary()) + extra, e.currentTarget);
+  copy(buildOrderForm(settings(), fileSummary(), true) + extra, e.currentTarget);
 });
 
-// ---------- 프롬프트 3: 교과 응용본 생성 ----------
+// ---------- 프롬프트 3: 기타 교과 응용본 생성 ----------
 $('#genGuide').addEventListener('click', async () => {
   const st = $('#guideStatus');
   st.classList.remove('err');
@@ -481,8 +641,9 @@ $('#genGuide').addEventListener('click', async () => {
     const msg = await stream.finalMessage();
     if (msg.stop_reason === 'refusal') throw new Error('AI가 요청을 거절했습니다.');
     ta.value = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    store.set(guideKey(), ta.value);
     st.textContent = '완료 — 내용을 확인하고 필요하면 고쳐 쓰세요.';
-    saveSettings(); refreshPromptPreview();
+    refreshPromptPreview();
   } catch (e) {
     ta.value = before;
     st.textContent = errText(e); st.classList.add('err');
@@ -494,4 +655,7 @@ $('#genGuide').addEventListener('click', async () => {
 // ---------- 시작 ----------
 loadSettings();
 onSubjectChange();
+syncSeg();
+updateDiffCount();
 setBusy(false);
+loadTemplates();
