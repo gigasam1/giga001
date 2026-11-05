@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>평가 문항 제작기</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>중등 평가 문항 제작기</h1>
+      <p class="sub">교과서와 기존 평가지를 읽혀서, 중복 없는 내신 문항과 시험지·정답표·이원목적분류표까지 한 번에 만듭니다.</p>
+      <p class="core"><b>중복 판정 공식</b> — 같은 <b>평가 요소</b>를 같은 <b>근거 문장</b>으로 다시 물으면 중복으로 보고 버립니다.</p>
+    </div>
+  </header>
+
+  <nav class="steps wrap" aria-label="단계">
+    <button class="step active" data-step="1"><span>1</span>주문서·프롬프트</button>
+    <button class="step" data-step="2"><span>2</span>자료 첨부</button>
+    <button class="step" data-step="3"><span>3</span>출제</button>
+  </nav>
+
+  <main class="wrap">
+    <!-- 1단계 -->
+    <section class="panel" id="panel-1">
+      <h2>출제 주문서</h2>
+      <div class="grid">
+        <label>학교명<input id="school" placeholder="○○중학교"></label>
+        <label>학년
+          <select id="grade"><option>중학교 1학년</option><option selected>중학교 2학년</option><option>중학교 3학년</option></select>
+        </label>
+        <label>과목
+          <select id="subject">
+            <option>국어</option><option>영어</option><option>수학</option><option>사회</option><option>역사</option>
+            <option>도덕</option><option>과학</option><option>기술·가정</option><option>정보</option><option>기타</option>
+          </select>
+        </label>
+        <label id="subjectOtherWrap" hidden>과목명 직접 입력<input id="subjectOther" placeholder="예: 한문"></label>
+        <label>시험명<input id="examName" placeholder="2026학년도 2학기 기말고사"></label>
+        <label class="wide">출제 범위<input id="range" placeholder="예: 3단원 (1)~(3), 교과서 88~131쪽"></label>
+        <label>선택형 문항 수<input id="mcq" type="number" min="0" value="20"></label>
+        <label>서술형 문항 수<input id="essay" type="number" min="0" value="4"></label>
+        <label>총점<input id="total" type="number" min="1" value="100"></label>
+        <label>선지 수
+          <select id="choices"><option value="5" selected>5지선다</option><option value="4">4지선다</option></select>
+        </label>
+        <label class="wide">배점 규칙 (선택)<input id="scoreRule" placeholder="예: 선택형 3~4점(소수점 없이), 서술형 5~7점"></label>
+        <fieldset class="wide diff">
+          <legend>난이도 비율 (상 : 중 : 하)</legend>
+          <input id="diffHigh" type="number" min="0" value="3" aria-label="상"> :
+          <input id="diffMid" type="number" min="0" value="5" aria-label="중"> :
+          <input id="diffLow" type="number" min="0" value="2" aria-label="하">
+        </fieldset>
+        <label class="wide">추가 요청 (선택)<textarea id="extra" rows="2" placeholder="예: 서술형 1문항은 교과서 탐구 활동에서, 자료 해석형 2문항 이상"></textarea></label>
+      </div>
+
+      <h2>교과 응용 지침</h2>
+      <div class="notice">
+        <b>프롬프트 1(교과 공통)</b>은 항상 들어갑니다. <b>프롬프트 2</b>는 국어과에 맞게 응용한 사례라서 국어를 고르면 자동으로 붙습니다.
+        다른 교과는 아래 <b>프롬프트 3</b> 버튼으로 내 교과용 응용본을 AI에게 설계시켜 붙일 수 있습니다(3단계의 API 키 필요). 직접 써 넣어도 됩니다.
+      </div>
+      <textarea id="subjectGuide" rows="7" placeholder="교과 응용 지침 (비워 두면 공통 프롬프트만 사용)"></textarea>
+      <div class="row">
+        <button class="ghost" id="genGuide">프롬프트 3 · 내 교과용 응용본 만들기</button>
+        <button class="ghost" id="viewPrompt">전체 프롬프트 보기</button>
+        <span class="status" id="guideStatus"></span>
+      </div>
+      <details id="promptPreview"><summary>시스템 프롬프트 미리보기</summary><pre id="promptText"></pre></details>
+
+      <div class="nav-row"><span></span><button class="primary" data-go="2">다음 · 자료 첨부</button></div>
+    </section>
+
+    <!-- 2단계 -->
+    <section class="panel" id="panel-2" hidden>
+      <h2>꼭 올려야 하는 자료 세 가지</h2>
+      <div class="notice warn">
+        <b>파일 형식 요령</b> — 한글 파일(HWP)은 읽지 못하니 PDF로 저장하거나 본문을 복사해 아래 칸에 붙여 넣으세요. 교과서는 사진보다 PDF가 정확합니다. 출제원안 양식은 서식 확인용이므로 PDF·사진이면 충분합니다.
+      </div>
+
+      <div class="drops">
+        <div class="drop" data-kind="textbook">
+          <h3>① 교과서 단원 <em>필수</em></h3>
+          <p>해당 단원 전체. 교사용 지도서 겸용판이면 가장 좋습니다.</p>
+          <p class="miss">없으면: 출제 불가 (자료 밖 출제 금지)</p>
+          <label class="pick">파일 선택 (PDF·이미지·텍스트)<input type="file" multiple accept=".pdf,image/*,.txt,.md,.csv,.hwp,.hwpx"></label>
+          <ul class="files"></ul>
+          <textarea rows="3" placeholder="또는 본문 붙여 넣기"></textarea>
+        </div>
+        <div class="drop" data-kind="past">
+          <h3>② 기존 평가지 <em>필수</em></h3>
+          <p><b>문제와 정답을 반드시 짝으로.</b> 소단원·대단원평가, 전년도 기출, 문제집까지 많을수록 좋습니다.</p>
+          <p class="miss">없으면: 중복 판정 불가</p>
+          <label class="pick">파일 선택 (PDF·이미지·텍스트)<input type="file" multiple accept=".pdf,image/*,.txt,.md,.csv,.hwp,.hwpx"></label>
+          <ul class="files"></ul>
+          <textarea rows="3" placeholder="또는 문제+정답 붙여 넣기"></textarea>
+        </div>
+        <div class="drop" data-kind="form">
+          <h3>③ 출제원안 양식 <em>권장</em></h3>
+          <p>학교 정기시험 양식 파일.</p>
+          <p class="miss">없으면: 일반 양식으로 만든 뒤 다시 옮겨야 함</p>
+          <label class="pick">파일 선택 (PDF·이미지·텍스트)<input type="file" multiple accept=".pdf,image/*,.txt,.md,.csv,.hwp,.hwpx"></label>
+          <ul class="files"></ul>
+          <textarea rows="3" placeholder="또는 양식 머리말·유의사항 붙여 넣기"></textarea>
+        </div>
+      </div>
+      <p class="status" id="sizeStatus"></p>
+      <div class="nav-row"><button class="ghost" data-go="1">이전</button><button class="primary" data-go="3">다음 · 출제</button></div>
+    </section>
+
+    <!-- 3단계 -->
+    <section class="panel" id="panel-3" hidden>
+      <h2>출제 방법</h2>
+      <div class="modes">
+        <div class="mode">
+          <h3>A. 앱에서 바로 출제</h3>
+          <p>Anthropic API 키로 Claude를 직접 호출합니다. 파일은 내 브라우저에서 Anthropic으로만 전송됩니다.</p>
+          <label>API 키<input id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off"></label>
+          <label class="check"><input type="checkbox" id="rememberKey"> 이 브라우저에 키 저장</label>
+          <label>모델
+            <select id="model">
+              <option value="claude-opus-5-5" selected>Claude Opus 5.5 (권장)</option>
+              <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (빠르고 저렴)</option>
+            </select>
+          </label>
+        </div>
+        <div class="mode">
+          <h3>B. 프롬프트만 복사</h3>
+          <p>API 키가 없으면 프롬프트를 복사해 Claude 프로젝트 지침이나 대화 첫 메시지에 붙이고, 자료 파일을 직접 첨부하세요.</p>
+          <div class="row col">
+            <button class="ghost" id="copySystem">① 프롬프트(지침) 복사</button>
+            <button class="ghost" id="copyOrder">② 첫 메시지 주문서 복사</button>
+          </div>
+          <p class="hint">AI가 자료 분석을 보고하면 "출제 시작"이라고 답하고, 이후에는 문항 번호로 수정을 요청합니다.</p>
+        </div>
+      </div>
+
+      <div class="row">
+        <button class="primary" id="analyzeBtn">자료 분석 요청</button>
+        <button class="primary" id="startBtn" disabled>출제 시작</button>
+        <button class="ghost" id="stopBtn" disabled>중단</button>
+        <button class="ghost" id="resetBtn">대화 초기화</button>
+        <span class="status" id="runStatus"></span>
+      </div>
+
+      <div id="chat" class="chat"></div>
+
+      <div class="followup" id="followup" hidden>
+        <h3>진행 중 요청 (문항 번호로 수정)</h3>
+        <div class="quick" id="quick"></div>
+        <div class="row">
+          <input id="qNum" type="number" min="1" placeholder="번호" class="num">
+          <textarea id="followText" rows="2" placeholder="예: 7번 문항 근거 문장을 교과서 102쪽 다른 문단으로 바꿔 줘."></textarea>
+          <button class="primary" id="sendBtn">보내기</button>
+        </div>
+      </div>
+
+      <div class="results" id="results" hidden>
+        <h2>최종 산출물</h2>
+        <div class="tabs" id="tabs" role="tablist"></div>
+        <div class="tabbody" id="tabbody"></div>
+        <div class="row">
+          <button class="ghost" id="dlDoc">현재 탭 Word(.doc) 저장</button>
+          <button class="ghost" id="dlAll">전체 Word(.doc) 저장</button>
+          <button class="ghost" id="dlMd">전체 마크다운 저장</button>
+          <button class="ghost" id="printBtn">인쇄·PDF</button>
+        </div>
+        <p class="hint">.doc 파일은 한글(HWP)에서도 열립니다. 열어서 출제원안 양식으로 옮기세요.</p>
+      </div>
+      <div class="nav-row"><button class="ghost" data-go="2">이전</button><span></span></div>
+    </section>
+  </main>
+
+  <footer class="wrap foot">원본 프롬프트: 「중등 평가 문항 제작 프롬프트」 Made by 상경샘 · AI가 만든 문항은 반드시 교사가 검토한 뒤 사용하세요.</footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
