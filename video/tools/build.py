@@ -158,7 +158,11 @@ def build_audio(spec, timeline, total, out, draft):
                 and has_audio_stream(resolve(v["file"])):
             i = add_input(resolve(v["file"]))
             ms = int(t0 * 1000)
+            # 영상과 같은 구간(start)과 속도(speed)로 맞춘다
+            start = float(v.get("start", 0))
+            speed = float(v.get("speed", 1.0))
             fx.append(f"[{i}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                      f"atrim=start={start},asetpts=PTS-STARTPTS,atempo={speed},"
                       f"atrim=0:{_dur},volume={float(v.get('audio_volume', 0.5))},"
                       f"adelay={ms}|{ms}[f{i}]")
 
@@ -310,7 +314,7 @@ def main():
         run(["ffmpeg", "-y", "-i", video, "-i", audio, *extra[:2],
              "-map", "0:v", "-map", "1:a", *(["-map", "2:s"] if has_subs else []),
              "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", *extra[2:],
-             "-shortest", "-movflags", "+faststart", final])
+             "-t", f"{total:.3f}", "-movflags", "+faststart", final])
     shutil.copy(srt, os.path.splitext(final)[0] + ".srt")
     print(f"\n완성: {os.path.relpath(final, os.getcwd())}  ({duration_of(final):.1f}s)")
 
